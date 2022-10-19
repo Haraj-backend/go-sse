@@ -1,8 +1,8 @@
 # go-sse
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/alexandrevicenzi/go-sse)](https://goreportcard.com/report/github.com/alexandrevicenzi/go-sse)
-[![Build Status](https://travis-ci.org/alexandrevicenzi/go-sse.svg?branch=master)](https://travis-ci.org/alexandrevicenzi/go-sse)
-[![GoDoc](https://godoc.org/github.com/alexandrevicenzi/go-sse?status.svg)](http://godoc.org/github.com/alexandrevicenzi/go-sse)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Haraj-backend/go-sse)](https://goreportcard.com/report/github.com/Haraj-backend/go-sse)
+[![Build Status](https://github.com/Haraj-backend/go-sse/actions/workflows/ci.yaml/badge.svg)](https://github.com/Haraj-backend/go-sse/actions/workflows/ci.yaml)
+[![GoDoc](https://godoc.org/github.com/Haraj-backend/go-sse?status.svg)](http://godoc.org/github.com/Haraj-backend/go-sse)
 
 Server-Sent Events for Go
 
@@ -25,7 +25,7 @@ It's [supported](http://caniuse.com/#feat=eventsource) by all major browsers and
 
 ## Instalation
 
-`go get github.com/alexandrevicenzi/go-sse`
+`go get github.com/Haraj-backend/go-sse`
 
 ## Example
 
@@ -40,7 +40,7 @@ import (
     "strconv"
     "time"
 
-    "github.com/alexandrevicenzi/go-sse"
+    "github.com/Haraj-backend/go-sse"
 )
 
 func main() {
@@ -73,7 +73,7 @@ e.onmessage = function(event) {
 };
 ```
 
-More examples available [here](https://github.com/alexandrevicenzi/go-sse/tree/master/_examples).
+More examples available [here](https://github.com/Haraj-backend/go-sse/tree/master/_examples).
 
 ## License
 
