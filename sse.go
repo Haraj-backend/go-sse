@@ -1,11 +1,17 @@
 package sse
 
 import (
+	"errors"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"sync"
+)
+
+var (
+	ErrNotStarted    = errors.New("server is not started")
+	ErrServerStarted = errors.New("server is already started")
 )
 
 // Server represents a server sent events server.
@@ -17,6 +23,7 @@ type Server struct {
 	removeClient chan *Client
 	shutdown     chan bool
 	closeChannel chan string
+	isStarted    bool
 }
 
 // NewServer creates a new SSE server.
@@ -39,23 +46,30 @@ func NewServer(options *Options) *Server {
 		make(chan *Client),
 		make(chan bool),
 		make(chan string),
+		false,
 	}
 
-	go s.dispatch()
+	// by default the server will start immediately, however sometimes we don't
+	// want this behavior, this is why we have `Options.DontStartServer`.
+	if !options.DontStartServer {
+		s.Start()
+	}
 
 	return s
 }
 
 func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	flusher, ok := response.(http.Flusher)
+	if !s.isStarted {
+		http.Error(response, "Server is not started", http.StatusInternalServerError)
+	}
 
+	flusher, ok := response.(http.Flusher)
 	if !ok {
 		http.Error(response, "Streaming unsupported.", http.StatusInternalServerError)
 		return
 	}
 
 	h := response.Header()
-
 	if s.options.hasHeaders() {
 		for k, v := range s.options.Headers {
 			h.Set(k, v)
@@ -120,15 +134,46 @@ func (s *Server) SendMessage(channelName string, message *Message) {
 	}
 }
 
+// Start is used for starting the server
+func (s *Server) Start() error {
+	if s.hasServerStarted() {
+		return ErrServerStarted
+	}
+	go s.dispatch()
+
+	s.mu.Lock()
+	s.isStarted = true
+	s.mu.Unlock()
+
+	return nil
+}
+
 // Restart closes all channels and clients and allow new connections.
-func (s *Server) Restart() {
+func (s *Server) Restart() error {
+	if !s.hasServerStarted() {
+		return ErrNotStarted
+	}
 	s.options.Logger.Print("restarting server.")
 	s.close()
+
+	return nil
 }
 
 // Shutdown performs a graceful server shutdown.
-func (s *Server) Shutdown() {
+func (s *Server) Shutdown() error {
+	if !s.hasServerStarted() {
+		return ErrNotStarted
+	}
 	s.shutdown <- true
+
+	return nil
+}
+
+func (s *Server) hasServerStarted() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.isStarted
 }
 
 // ClientCount returns the number of clients connected to this server.
