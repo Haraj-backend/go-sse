@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	ErrNotStarted    = errors.New("server is not started")
-	ErrServerStarted = errors.New("server is already started")
+	ErrServerNotStarted = errors.New("server is not started")
+	ErrServerStarted    = errors.New("server is already started")
 )
 
 // Server represents a server sent events server.
@@ -58,25 +58,25 @@ func NewServer(options *Options) *Server {
 	return s
 }
 
-func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.isStarted {
-		http.Error(response, "Server is not started", http.StatusInternalServerError)
+		http.Error(w, "Server is not started", http.StatusInternalServerError)
 	}
 
-	flusher, ok := response.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(response, "Streaming unsupported.", http.StatusInternalServerError)
+		http.Error(w, "Streaming unsupported.", http.StatusInternalServerError)
 		return
 	}
 
-	h := response.Header()
+	h := w.Header()
 	if s.options.hasHeaders() {
 		for k, v := range s.options.Headers {
 			h.Set(k, v)
 		}
 	}
 
-	if request.Method == "GET" {
+	if r.Method == "GET" {
 		h.Set("Content-Type", "text/event-stream")
 		h.Set("Cache-Control", "no-cache")
 		h.Set("Connection", "keep-alive")
@@ -85,37 +85,40 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		var channelName string
 
 		if s.options.ChannelNameFunc == nil {
-			channelName = request.URL.Path
+			channelName = r.URL.Path
 		} else {
-			channelName = s.options.ChannelNameFunc(request)
+			channelName = s.options.ChannelNameFunc(r)
 		}
 
-		lastEventID := request.Header.Get("Last-Event-ID")
+		lastEventID := r.Header.Get("Last-Event-ID")
 		c := newClient(lastEventID, channelName)
 		s.addClient <- c
-		closeNotify := request.Context().Done()
+		closeNotify := r.Context().Done()
 
 		go func() {
 			<-closeNotify
 			s.removeClient <- c
 		}()
 
-		response.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusOK)
 		flusher.Flush()
 
 		for msg := range c.send {
 			msg.retry = s.options.RetryInterval
-			response.Write(msg.Bytes())
+			w.Write(msg.Bytes())
 			flusher.Flush()
 		}
-	} else if request.Method != "OPTIONS" {
-		response.WriteHeader(http.StatusMethodNotAllowed)
+	} else if r.Method != "OPTIONS" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
 // SendMessage broadcast a message to all clients in a channel.
 // If channelName is an empty string, it will broadcast the message to all channels.
-func (s *Server) SendMessage(channelName string, message *Message) {
+func (s *Server) SendMessage(channelName string, message *Message) error {
+	if !s.hasStarted() {
+		return ErrServerNotStarted
+	}
 	if len(channelName) == 0 {
 		s.options.Logger.Print("broadcasting message to all channels.")
 
@@ -132,11 +135,13 @@ func (s *Server) SendMessage(channelName string, message *Message) {
 	} else {
 		s.options.Logger.Printf("message not sent because channel '%s' has no clients.", channelName)
 	}
+
+	return nil
 }
 
 // Start is used for starting the server
 func (s *Server) Start() error {
-	if s.hasServerStarted() {
+	if s.hasStarted() {
 		return ErrServerStarted
 	}
 	go s.dispatch()
@@ -150,8 +155,8 @@ func (s *Server) Start() error {
 
 // Restart closes all channels and clients and allow new connections.
 func (s *Server) Restart() error {
-	if !s.hasServerStarted() {
-		return ErrNotStarted
+	if !s.hasStarted() {
+		return ErrServerNotStarted
 	}
 	s.options.Logger.Print("restarting server.")
 	s.close()
@@ -161,15 +166,15 @@ func (s *Server) Restart() error {
 
 // Shutdown performs a graceful server shutdown.
 func (s *Server) Shutdown() error {
-	if !s.hasServerStarted() {
-		return ErrNotStarted
+	if !s.hasStarted() {
+		return ErrServerNotStarted
 	}
 	s.shutdown <- true
 
 	return nil
 }
 
-func (s *Server) hasServerStarted() bool {
+func (s *Server) hasStarted() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
