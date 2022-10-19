@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 )
 
 var (
@@ -42,10 +43,10 @@ func NewServer(options *Options) *Server {
 		sync.RWMutex{},
 		options,
 		make(map[string]*Channel),
-		make(chan *Client),
-		make(chan *Client),
-		make(chan bool),
-		make(chan string),
+		make(chan *Client, 256), // we use buffered channel, to minimize blocking when sending signal
+		make(chan *Client, 256), // we use buffered channel, to minimize blocking when sending signal
+		make(chan bool, 1),      // we use buffered channel, to minimize blocking when sending signal
+		make(chan string, 1),    // we use buffered channel, to minimize blocking when sending signal
 		false,
 	}
 
@@ -61,6 +62,7 @@ func NewServer(options *Options) *Server {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.isStarted {
 		http.Error(w, "Server is not started", http.StatusInternalServerError)
+		return
 	}
 
 	flusher, ok := w.(http.Flusher)
@@ -92,21 +94,40 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		lastEventID := r.Header.Get("Last-Event-ID")
 		c := newClient(lastEventID, channelName)
-		s.addClient <- c
 		closeNotify := r.Context().Done()
 
-		go func() {
-			<-closeNotify
-			s.removeClient <- c
+		select {
+		case s.addClient <- c:
+		case <-closeNotify:
+			return
+		}
+
+		// defer function to remove client from channel, here we give timeout
+		// 1 second for inserting the request to s.removeClient.
+		defer func() {
+			select {
+			case s.removeClient <- c:
+			case <-time.After(1 * time.Second):
+			}
 		}()
 
+		// send status ok header to client
 		w.WriteHeader(http.StatusOK)
 		flusher.Flush()
 
-		for msg := range c.send {
-			msg.retry = s.options.RetryInterval
-			w.Write(msg.Bytes())
-			flusher.Flush()
+		// stream event source to client
+		for {
+			select {
+			case <-closeNotify:
+				return
+			case msg, ok := <-c.send:
+				if !ok {
+					return
+				}
+				msg.retry = s.options.RetryInterval
+				w.Write(msg.Bytes())
+				flusher.Flush()
+			}
 		}
 	} else if r.Method != "OPTIONS" {
 		w.WriteHeader(http.StatusMethodNotAllowed)

@@ -1,11 +1,17 @@
 package sse
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewServerNilOptions(t *testing.T) {
@@ -86,4 +92,33 @@ func TestServer(t *testing.T) {
 	if messageCount != channelCount*clientCount {
 		t.Errorf("Expected %d messages but got %d", channelCount*clientCount, messageCount)
 	}
+}
+
+func TestServerDontStartServer(t *testing.T) {
+	// initialize server with don't start server option
+	srv := NewServer(&Options{
+		DontStartServer: true,
+	})
+	// try to send message, it should throw error since the server is not yet started
+	chanName := "test-channel"
+	msg := SimpleMessage("test-send")
+	assert.Error(t, srv.SendMessage(chanName, msg))
+	// try to restart server, it should throw error since the server is not yet started
+	assert.Error(t, srv.Restart())
+	// try to shutdown server, it should throw error since the server is not yet started
+	assert.Error(t, srv.Shutdown())
+
+	// try to serve http client, the client should receive internal status error, we set the
+	// request timeout to 2 seconds
+	wr := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "https://testing.com", nil)
+	ctx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
+	srv.ServeHTTP(wr, req.WithContext(ctx))
+	assert.NoError(t, ctx.Err())
+	assert.Equal(t, http.StatusInternalServerError, wr.Result().StatusCode)
+	cancel()
+
+	// start server, it should not throw error since server already started
+	// require.NoError(t, srv.Start())
+	// test send message, it should be received by all subscriber
 }
