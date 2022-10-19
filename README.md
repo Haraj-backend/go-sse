@@ -1,7 +1,7 @@
 # go-sse
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/Haraj-backend/go-sse)](https://goreportcard.com/report/github.com/Haraj-backend/go-sse)
-[![Build Status](https://github.com/Haraj-backend/go-sse/actions/workflows/ci.yaml/badge.svg)](https://github.com/Haraj-backend/go-sse/actions/workflows/ci.yaml)
+[![Code Integration Flow](https://github.com/Haraj-backend/go-sse/actions/workflows/ci.yaml/badge.svg)](https://github.com/Haraj-backend/go-sse/actions/workflows/ci.yaml)
 [![GoDoc](https://godoc.org/github.com/Haraj-backend/go-sse?status.svg)](http://godoc.org/github.com/Haraj-backend/go-sse)
 
 Server-Sent Events for Go
