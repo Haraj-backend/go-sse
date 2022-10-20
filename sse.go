@@ -45,8 +45,8 @@ func NewServer(options *Options) *Server {
 		make(map[string]*Channel),
 		make(chan *Client, 256), // we use buffered channel, to minimize blocking when sending signal
 		make(chan *Client, 256), // we use buffered channel, to minimize blocking when sending signal
-		make(chan bool, 1),      // we use buffered channel, to minimize blocking when sending signal
-		make(chan string, 1),    // we use buffered channel, to minimize blocking when sending signal
+		make(chan bool),
+		make(chan string),
 		false,
 	}
 
