@@ -1,6 +1,7 @@
 package sse
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/net/context/ctxhttp"
 )
 
 func TestNewServerNilOptions(t *testing.T) {
@@ -100,9 +103,7 @@ func TestServerDontStartServer(t *testing.T) {
 		DontStartServer: true,
 	})
 	// try to send message, it should throw error since the server is not yet started
-	chanName := "test-channel"
-	msg := SimpleMessage("test-send")
-	assert.Error(t, srv.SendMessage(chanName, msg))
+	assert.Error(t, srv.SendMessage("test-channel", SimpleMessage("test-send")))
 	// try to restart server, it should throw error since the server is not yet started
 	assert.Error(t, srv.Restart())
 	// try to shutdown server, it should throw error since the server is not yet started
@@ -119,6 +120,72 @@ func TestServerDontStartServer(t *testing.T) {
 	cancel()
 
 	// start server, it should not throw error since server already started
-	// require.NoError(t, srv.Start())
-	// test send message, it should be received by all subscriber
+	require.NoError(t, srv.Start())
+	defer func() {
+		assert.NoError(t, srv.Shutdown())
+	}()
+	// initialize http test server
+	srvtest := httptest.NewServer(srv)
+	defer srvtest.Close()
+	// test send message, it should be received by all subscribers
+	numChannels := 5
+	numSubscribersEachChannel := 5
+	countMessageReceived := 0
+
+	var mux sync.Mutex
+	incrCountMessageReceived := func() {
+		mux.Lock()
+		countMessageReceived++
+		mux.Unlock()
+	}
+
+	var wgClientPrep, wgMessageReceived sync.WaitGroup
+
+	for i := 0; i < numChannels; i++ {
+		chanName := fmt.Sprintf("chan_%v", i)
+		for j := 0; j < numSubscribersEachChannel; j++ {
+			wgClientPrep.Add(1)
+			wgMessageReceived.Add(1)
+			go func() {
+				// open client connection
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				ul := fmt.Sprintf("%v/%v", srvtest.URL, chanName)
+				resp, err := ctxhttp.Get(ctx, http.DefaultClient, ul)
+				if err != nil {
+					log.Printf("error: %v", err)
+					return
+				}
+				defer resp.Body.Close()
+				// wait for message
+				sc := bufio.NewScanner(resp.Body)
+				wgClientPrep.Done()
+				for sc.Scan() {
+					msg := sc.Text()
+					// every sse message will be terminated with double newline (\n\n), when we are using scan
+					// we already set the delimiter to be `\n`, which will resulted in empty string at the end
+					if len(msg) == 0 {
+						// increment count message
+						incrCountMessageReceived()
+						// close connection
+						cancel()
+						// mark message as received
+						wgMessageReceived.Done()
+
+						return
+					}
+				}
+			}()
+		}
+	}
+
+	// wait for all client to be ready receiving the message
+	wgClientPrep.Wait()
+	// publish message to all channels which ultimately lead to all clients
+	assert.NoError(t, srv.SendMessage("", SimpleMessage("Hello World!")))
+	// wait for all clients to complete
+	wgMessageReceived.Wait()
+
+	// check for number of message received
+	assert.Equal(t, numChannels*numSubscribersEachChannel, countMessageReceived)
 }
