@@ -2,7 +2,10 @@ package sse
 
 import (
 	"sync"
+	"time"
 )
+
+const sendMessageToClientTimeout = 200 * time.Millisecond
 
 // Channel represents a server sent events channel.
 type Channel struct {
@@ -25,14 +28,22 @@ func newChannel(name string) *Channel {
 func (c *Channel) SendMessage(message *Message) {
 	c.lastEventID = message.id
 
-	c.mu.RLock()
+	timer := time.NewTimer(sendMessageToClientTimeout)
+	defer timer.Stop()
 
+	c.mu.RLock()
 	for c, open := range c.clients {
 		if open {
-			c.send <- message
+			// we send message to client, but with timeout since it is possible for
+			// the client channel message to be full, if we don't set timeout we will
+			// block the entire publishing process
+			select {
+			case c.send <- message:
+			case <-timer.C:
+			}
+			timer.Reset(sendMessageToClientTimeout)
 		}
 	}
-
 	c.mu.RUnlock()
 }
 

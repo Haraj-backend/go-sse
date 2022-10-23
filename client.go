@@ -11,7 +11,9 @@ func newClient(lastEventID, channel string) *Client {
 	return &Client{
 		lastEventID,
 		channel,
-		make(chan *Message),
+		// use buffered channel so client could still receive message event though it is busy,
+		// this is to minimize message loss in client
+		make(chan *Message, 1024),
 	}
 }
 

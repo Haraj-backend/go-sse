@@ -23,6 +23,4 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v2
       - name: Run test
-        run: go test ./...
-      - name: Run build
-        run: go build .
+        run: make test

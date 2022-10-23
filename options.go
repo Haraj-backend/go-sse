@@ -16,6 +16,9 @@ type Options struct {
 	ChannelNameFunc func(*http.Request) string
 	// All usage logs end up in Logger
 	Logger *log.Logger
+	// DontStartServer is used to make server not starting immediately
+	// after NewServer(). By default the server start immediately.
+	DontStartServer bool
 }
 
 func (opt *Options) hasHeaders() bool {
